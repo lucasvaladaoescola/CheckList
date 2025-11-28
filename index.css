@@ -43,7 +43,7 @@ body{
   padding: 28px;
   -webkit-font-smoothing:antialiased;
   -moz-osx-font-smoothing:grayscale;
-  color: #0b1720;
+  color: #ffff;
 }
 
 /* Card */
@@ -224,4 +224,5 @@ body{
   .li-text{ max-width: 200px; }
   .footer-actions{ justify-content:center; }
 }
+
 
