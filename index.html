@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Checklist com Porcentagem</title>
+  <link rel="stylesheet" href="index.css">
+</head>
+<body>
+  <h1>Checklist</h1>
+  <div id="container">
+    <input type="text" id="novoItem" placeholder="Adicionar novo item..." />
+    <button id="btnAdd">Adicionar</button>
+
+    <ul id="lista"></ul>
+
+    <div id="progress">
+      <div id="barra"></div>
+    </div>
+    <div id="percentual">0%</div>
+  </div>
+
+  <script>
+    // Dados em memória (troque por localStorage se quiser persistir)
+    let lista = [];
+
+    const novoInput = document.getElementById('novoItem');
+    const btnAdd = document.getElementById('btnAdd');
+
+    btnAdd.addEventListener('click', adicionarItem);
+    novoInput.addEventListener('keyup', (e) => { if (e.key === 'Enter') adicionarItem(); });
+
+    function atualizarLista() {
+      const ul = document.getElementById('lista');
+      ul.innerHTML = '';
+
+      lista.forEach((item, index) => {
+        const li = document.createElement('li');
+
+        li.innerHTML = `
+          <div class="item-left">
+            <input type="checkbox" ${item.concluido ? 'checked' : ''} onclick="toggle(${index})">
+            <span class="texto" ${item.concluido ? 'data-concluido' : ''}>${escapeHtml(item.texto)}</span>
+          </div>
+          <div class="botoes">
+            <button class="edit" onclick="editar(${index})">Editar</button>
+            <button class="delete" onclick="excluir(${index})">Excluir</button>
+          </div>
+        `;
+
+        ul.appendChild(li);
+      });
+      atualizarProgresso();
+    }
+
+    function adicionarItem() {
+      const texto = novoInput.value.trim();
+      if (texto === '') return;
+
+      lista.push({ texto, concluido: false });
+      novoInput.value = '';
+      atualizarLista();
+    }
+
+    function editar(index) {
+      const novo = prompt('Editar item:', lista[index].texto);
+      if (novo === null) return; // cancelou
+      lista[index].texto = novo.trim();
+      atualizarLista();
+    }
+
+    function excluir(index) {
+      if (!confirm('Excluir este item?')) return;
+      lista.splice(index, 1);
+      atualizarLista();
+    }
+
+    function toggle(index) {
+      lista[index].concluido = !lista[index].concluido;
+      atualizarLista();
+    }
+
+    function atualizarProgresso() {
+      const total = lista.length;
+      const concluidos = lista.filter(i => i.concluido).length;
+      const perc = total === 0 ? 0 : Math.round((concluidos / total) * 100);
+
+      document.getElementById('barra').style.width = perc + '%';
+      document.getElementById('percentual').textContent = perc + '%';
+    }
+
+    // Evita injection quando mostrar texto
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // Torna funções acessíveis para onclick inline
+    window.toggle = toggle;
+    window.editar = editar;
+    window.excluir = excluir;
+
+    // Inicial
+    atualizarLista();
+  </script>
+</body>
+</html>
