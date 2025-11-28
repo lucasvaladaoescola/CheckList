@@ -1,100 +1,336 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-    <meta charset="UTF-8">
-    <title>Checklist Compartilhável</title>
-    <link rel="stylesheet" href="index.css">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Checklist Compartilhável</title>
+  <link rel="stylesheet" href="index.css">
 </head>
 <body>
-    <div class="container">
-        <h1>Checklist Compartilhável</h1>
+  <main class="card">
+    <header class="card-header">
+      <div class="title-area">
+        <h1>Checklist</h1>
+        <p class="subtitle">Compartilhe, edite e acompanhe o progresso.</p>
+      </div>
 
-        <div class="add-area">
-            <input type="text" id="itemText" placeholder="Novo item...">
-            <button onclick="addItem()">Adicionar</button>
-        </div>
+      <div class="controls">
+        <button id="themeToggle" class="btn secondary" title="Alternar tema">🌙</button>
+        <button id="clearBtn" class="btn danger" title="Limpar tudo">Limpar</button>
+      </div>
+    </header>
 
-        <ul id="lista"></ul>
+    <section class="add-section">
+      <input id="itemInput" type="text" placeholder="Adicionar novo item e pressione Enter" autocomplete="off" />
+      <button id="addBtn" class="btn primary">Adicionar</button>
+    </section>
 
-        <div class="footer">
-            <p id="percentual">Concluído: 0%</p>
-            <button onclick="shareList()">Compartilhar Lista</button>
-        </div>
-    </div>
+    <ul id="list" class="list" aria-live="polite"></ul>
+
+    <footer class="card-footer">
+      <div class="progress-wrap">
+        <div id="progressBar" class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
+        <div id="percentText" class="percent">0%</div>
+      </div>
+
+      <div class="footer-actions">
+        <button id="shareBtn" class="btn outline">Compartilhar (copiar link)</button>
+        <input id="importFile" type="file" accept=".json" class="hidden" />
+        <button id="exportBtn" class="btn outline">Exportar (.json)</button>
+        <button id="importBtn" class="btn outline">Importar (.json)</button>
+      </div>
+    </footer>
+  </main>
+
+  <div id="toast" class="toast" aria-hidden="true"></div>
 
 <script>
+/*
+  Checklist completo:
+    - edição inline (duplo clique no texto)
+    - salvar automático (localStorage)
+    - limpar tudo
+    - tema claro/escuro manual
+    - animações leves
+    - compartilhamento via link (URL param "data")
+    - export / import .json
+*/
+
+const STORAGE_KEY = 'shared_checklist_v1';
+const listEl = document.getElementById('list');
+const itemInput = document.getElementById('itemInput');
+const addBtn = document.getElementById('addBtn');
+const clearBtn = document.getElementById('clearBtn');
+const themeToggle = document.getElementById('themeToggle');
+const progressFill = document.getElementById('progressFill');
+const percentText = document.getElementById('percentText');
+const shareBtn = document.getElementById('shareBtn');
+const exportBtn = document.getElementById('exportBtn');
+const importBtn = document.getElementById('importBtn');
+const importFile = document.getElementById('importFile');
+const toast = document.getElementById('toast');
+
 let items = [];
+let saveTimer = null;
 
-function loadFromURL() {
-    const params = new URLSearchParams(window.location.search);
-    if (params.has("data")) {
-        try {
-            items = JSON.parse(decodeURIComponent(params.get("data")));
-            render();
-        } catch (e) {
-            console.error("Erro ao carregar dados da URL");
-        }
-    }
+// ---------- UTIL ----------
+function toastMsg(msg, ms = 2200) {
+  toast.textContent = msg;
+  toast.classList.add('visible');
+  toast.setAttribute('aria-hidden', 'false');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => {
+    toast.classList.remove('visible');
+    toast.setAttribute('aria-hidden', 'true');
+  }, ms);
 }
 
-function saveToURL() {
-    const data = encodeURIComponent(JSON.stringify(items));
-    history.replaceState(null, "", "?data=" + data);
+function debounceSave() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+  }, 300);
 }
 
-function addItem() {
-    const text = document.getElementById("itemText").value.trim();
-    if (text === "") return;
+function escapeHtml(s){ const d=document.createElement('div'); d.textContent=s; return d.innerHTML; }
 
-    items.push({ text, done: false });
-    document.getElementById("itemText").value = "";
-    render();
-    saveToURL();
+// ---------- LOAD / INIT ----------
+function loadInitial() {
+  // 1) If URL has data param, load from it (overrides)
+  const params = new URLSearchParams(window.location.search);
+  if (params.has('data')) {
+    try {
+      const payload = JSON.parse(decodeURIComponent(params.get('data')));
+      if (Array.isArray(payload)) {
+        items = payload.map(normalizeItem);
+        render();
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+        toastMsg('Lista carregada da URL');
+        return;
+      }
+    } catch(e){ console.warn('URL data parse error', e); }
+  }
+
+  // 2) Load from localStorage
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) items = parsed.map(normalizeItem);
+    } catch(e){ console.warn('localStorage parse error', e); }
+  }
+
+  render();
 }
 
-function toggleItem(index) {
-    items[index].done = !items[index].done;
-    render();
-    saveToURL();
+function normalizeItem(it){
+  return {
+    id: it.id || String(Date.now()) + Math.random().toString(36).slice(2,8),
+    text: (typeof it.text === 'string') ? it.text : '',
+    done: !!it.done
+  };
 }
 
-function deleteItem(index) {
-    items.splice(index, 1);
-    render();
-    saveToURL();
-}
-
+// ---------- RENDER ----------
 function render() {
-    const lista = document.getElementById("lista");
-    lista.innerHTML = "";
+  listEl.innerHTML = '';
+  items.forEach((item, index) => {
+    const li = document.createElement('li');
+    li.className = 'list-item';
+    li.dataset.index = index;
 
-    items.forEach((item, index) => {
-        lista.innerHTML += `
-            <li>
-                <input type="checkbox" ${item.done ? "checked" : ""} onclick="toggleItem(${index})">
-                <span class="${item.done ? 'done' : ''}">${item.text}</span>
-                <button onclick="deleteItem(${index})">X</button>
-            </li>`;
+    const left = document.createElement('div');
+    left.className = 'li-left';
+
+    const chk = document.createElement('input');
+    chk.type = 'checkbox';
+    chk.checked = item.done;
+    chk.className = 'li-check';
+    chk.addEventListener('change', () => {
+      items[index].done = chk.checked;
+      updateProgress();
+      debounceSave();
     });
 
-    updatePercent();
+    const span = document.createElement('span');
+    span.className = 'li-text';
+    if (item.done) span.classList.add('done');
+    span.innerHTML = escapeHtml(item.text);
+    // double-click to edit inline
+    span.addEventListener('dblclick', () => startEdit(index, span));
+
+    left.appendChild(chk);
+    left.appendChild(span);
+
+    const right = document.createElement('div');
+    right.className = 'li-right';
+
+    const editBtn = document.createElement('button');
+    editBtn.className = 'icon-btn';
+    editBtn.title = 'Editar';
+    editBtn.innerHTML = '✏️';
+    editBtn.addEventListener('click', () => startEdit(index, span));
+
+    const delBtn = document.createElement('button');
+    delBtn.className = 'icon-btn del';
+    delBtn.title = 'Excluir';
+    delBtn.innerHTML = '🗑️';
+    delBtn.addEventListener('click', () => {
+      if (!confirm('Excluir este item?')) return;
+      items.splice(index,1);
+      render();
+      updateProgress();
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+      toastMsg('Item excluído');
+    });
+
+    right.appendChild(editBtn);
+    right.appendChild(delBtn);
+
+    li.appendChild(left);
+    li.appendChild(right);
+    listEl.appendChild(li);
+  });
+
+  updateProgress();
 }
 
-function updatePercent() {
-    const total = items.length;
-    const done = items.filter(i => i.done).length;
-    const percent = total === 0 ? 0 : Math.round((done / total) * 100);
-    document.getElementById("percentual").innerText = `Concluído: ${percent}%`;
+// ---------- EDIT INLINE ----------
+function startEdit(index, spanEl) {
+  const orig = items[index].text;
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'edit-input';
+  input.value = orig;
+  spanEl.replaceWith(input);
+  input.focus();
+  input.select();
+
+  function finish(save) {
+    if (save) {
+      const v = input.value.trim();
+      items[index].text = v || '(vazio)';
+      toastMsg('Item editado');
+    }
+    input.replaceWith(spanEl);
+    render();
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+  }
+
+  input.addEventListener('blur', () => finish(true));
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') finish(true);
+    if (e.key === 'Escape') finish(false);
+  });
 }
 
-function shareList() {
-    saveToURL();
-    navigator.clipboard.writeText(window.location.href);
-    alert("Link copiado! Envie para quem você quiser.");
+// ---------- ACTIONS ----------
+function addItemFromInput() {
+  const text = itemInput.value.trim();
+  if (!text) return;
+  items.push(normalizeItem({ text, done: false }));
+  itemInput.value = '';
+  render();
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+  toastMsg('Item adicionado');
+  // update URL state if user had shared URL before
+  history.replaceState(null, '', window.location.pathname);
 }
 
-loadFromURL();
+addBtn.addEventListener('click', addItemFromInput);
+itemInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') addItemFromInput();
+});
+
+// Theme toggle
+function applyTheme(isDark) {
+  document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
+  themeToggle.textContent = isDark ? '☀️' : '🌙';
+  localStorage.setItem('checklist_theme', isDark ? 'dark' : 'light');
+}
+themeToggle.addEventListener('click', () => {
+  const current = document.documentElement.getAttribute('data-theme') === 'dark';
+  applyTheme(!current);
+});
+
+// Clear all
+clearBtn.addEventListener('click', () => {
+  if (!confirm('Tem certeza que deseja limpar todos os itens?')) return;
+  items = [];
+  render();
+  localStorage.removeItem(STORAGE_KEY);
+  history.replaceState(null, '', window.location.pathname);
+  toastMsg('Lista limpa');
+});
+
+// Progress
+function updateProgress(){
+  const total = items.length;
+  const done = items.filter(i=>i.done).length;
+  const perc = total === 0 ? 0 : Math.round((done/total)*100);
+  progressFill.style.width = perc + '%';
+  percentText.textContent = perc + '%';
+}
+
+// Share (copy link with data param)
+shareBtn.addEventListener('click', async () => {
+  try {
+    const data = encodeURIComponent(JSON.stringify(items));
+    const url = window.location.origin + window.location.pathname + '?data=' + data;
+    await navigator.clipboard.writeText(url);
+    toastMsg('Link copiado para a área de transferência');
+  } catch (e) {
+    toastMsg('Erro ao copiar link');
+  }
+});
+
+// Export / Import JSON
+exportBtn.addEventListener('click', () => {
+  const blob = new Blob([JSON.stringify(items, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'checklist.json';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  toastMsg('Arquivo exportado');
+});
+
+importBtn.addEventListener('click', () => importFile.click());
+importFile.addEventListener('change', (e) => {
+  const f = e.target.files[0];
+  if (!f) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    try {
+      const parsed = JSON.parse(ev.target.result);
+      if (!Array.isArray(parsed)) throw new Error('Formato inválido');
+      items = parsed.map(normalizeItem);
+      render();
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+      toastMsg('Arquivo importado');
+      importFile.value = '';
+    } catch (err) {
+      alert('Erro ao importar: arquivo inválido.');
+    }
+  };
+  reader.readAsText(f);
+});
+
+// Auto-save while typing: update localStorage on changes to items (debounced)
+const observer = new MutationObserver(() => debounceSave());
+observer.observe(listEl, { childList: true, subtree: true });
+
+// Theme persistence
+(function initTheme(){
+  const saved = localStorage.getItem('checklist_theme');
+  if (saved) applyTheme(saved === 'dark');
+  else applyTheme(false); // default light
+})();
+
+// Initialize
+loadInitial();
+
 </script>
-
 </body>
 </html>
