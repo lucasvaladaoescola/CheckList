@@ -1,108 +1,100 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Checklist com Porcentagem</title>
-  <link rel="stylesheet" href="index.css">
+    <meta charset="UTF-8">
+    <title>Checklist Compartilhável</title>
+    <link rel="stylesheet" href="index.css">
 </head>
 <body>
-  <h1>Checklist</h1>
-  <div id="container">
-    <input type="text" id="novoItem" placeholder="Adicionar novo item..." />
-    <button id="btnAdd">Adicionar</button>
+    <div class="container">
+        <h1>Checklist Compartilhável</h1>
 
-    <ul id="lista"></ul>
+        <div class="add-area">
+            <input type="text" id="itemText" placeholder="Novo item...">
+            <button onclick="addItem()">Adicionar</button>
+        </div>
 
-    <div id="progress">
-      <div id="barra"></div>
+        <ul id="lista"></ul>
+
+        <div class="footer">
+            <p id="percentual">Concluído: 0%</p>
+            <button onclick="shareList()">Compartilhar Lista</button>
+        </div>
     </div>
-    <div id="percentual">0%</div>
-  </div>
 
-  <script>
-    // Dados em memória (troque por localStorage se quiser persistir)
-    let lista = [];
+<script>
+let items = [];
 
-    const novoInput = document.getElementById('novoItem');
-    const btnAdd = document.getElementById('btnAdd');
-
-    btnAdd.addEventListener('click', adicionarItem);
-    novoInput.addEventListener('keyup', (e) => { if (e.key === 'Enter') adicionarItem(); });
-
-    function atualizarLista() {
-      const ul = document.getElementById('lista');
-      ul.innerHTML = '';
-
-      lista.forEach((item, index) => {
-        const li = document.createElement('li');
-
-        li.innerHTML = `
-          <div class="item-left">
-            <input type="checkbox" ${item.concluido ? 'checked' : ''} onclick="toggle(${index})">
-            <span class="texto" ${item.concluido ? 'data-concluido' : ''}>${escapeHtml(item.texto)}</span>
-          </div>
-          <div class="botoes">
-            <button class="edit" onclick="editar(${index})">Editar</button>
-            <button class="delete" onclick="excluir(${index})">Excluir</button>
-          </div>
-        `;
-
-        ul.appendChild(li);
-      });
-      atualizarProgresso();
+function loadFromURL() {
+    const params = new URLSearchParams(window.location.search);
+    if (params.has("data")) {
+        try {
+            items = JSON.parse(decodeURIComponent(params.get("data")));
+            render();
+        } catch (e) {
+            console.error("Erro ao carregar dados da URL");
+        }
     }
+}
 
-    function adicionarItem() {
-      const texto = novoInput.value.trim();
-      if (texto === '') return;
+function saveToURL() {
+    const data = encodeURIComponent(JSON.stringify(items));
+    history.replaceState(null, "", "?data=" + data);
+}
 
-      lista.push({ texto, concluido: false });
-      novoInput.value = '';
-      atualizarLista();
-    }
+function addItem() {
+    const text = document.getElementById("itemText").value.trim();
+    if (text === "") return;
 
-    function editar(index) {
-      const novo = prompt('Editar item:', lista[index].texto);
-      if (novo === null) return; // cancelou
-      lista[index].texto = novo.trim();
-      atualizarLista();
-    }
+    items.push({ text, done: false });
+    document.getElementById("itemText").value = "";
+    render();
+    saveToURL();
+}
 
-    function excluir(index) {
-      if (!confirm('Excluir este item?')) return;
-      lista.splice(index, 1);
-      atualizarLista();
-    }
+function toggleItem(index) {
+    items[index].done = !items[index].done;
+    render();
+    saveToURL();
+}
 
-    function toggle(index) {
-      lista[index].concluido = !lista[index].concluido;
-      atualizarLista();
-    }
+function deleteItem(index) {
+    items.splice(index, 1);
+    render();
+    saveToURL();
+}
 
-    function atualizarProgresso() {
-      const total = lista.length;
-      const concluidos = lista.filter(i => i.concluido).length;
-      const perc = total === 0 ? 0 : Math.round((concluidos / total) * 100);
+function render() {
+    const lista = document.getElementById("lista");
+    lista.innerHTML = "";
 
-      document.getElementById('barra').style.width = perc + '%';
-      document.getElementById('percentual').textContent = perc + '%';
-    }
+    items.forEach((item, index) => {
+        lista.innerHTML += `
+            <li>
+                <input type="checkbox" ${item.done ? "checked" : ""} onclick="toggleItem(${index})">
+                <span class="${item.done ? 'done' : ''}">${item.text}</span>
+                <button onclick="deleteItem(${index})">X</button>
+            </li>`;
+    });
 
-    // Evita injection quando mostrar texto
-    function escapeHtml(text) {
-      const div = document.createElement('div');
-      div.textContent = text;
-      return div.innerHTML;
-    }
+    updatePercent();
+}
 
-    // Torna funções acessíveis para onclick inline
-    window.toggle = toggle;
-    window.editar = editar;
-    window.excluir = excluir;
+function updatePercent() {
+    const total = items.length;
+    const done = items.filter(i => i.done).length;
+    const percent = total === 0 ? 0 : Math.round((done / total) * 100);
+    document.getElementById("percentual").innerText = `Concluído: ${percent}%`;
+}
 
-    // Inicial
-    atualizarLista();
-  </script>
+function shareList() {
+    saveToURL();
+    navigator.clipboard.writeText(window.location.href);
+    alert("Link copiado! Envie para quem você quiser.");
+}
+
+loadFromURL();
+</script>
+
 </body>
 </html>
